@@ -21,7 +21,7 @@ impl ParAwait {
     }
 
     fn join2(&self) -> syn::Stmt {
-        let fs = (0..self.assigns.len())
+        let tys = (0..self.assigns.len())
             .map(|i| syn::Ident::new(&format!("F{}", i), Span::call_site()))
             .collect::<Vec<_>>();
         let ns = (0..self.assigns.len())
@@ -29,10 +29,10 @@ impl ParAwait {
             .collect::<Vec<_>>();
 
         parse_quote!(
-            fn join<#(#fs),*>(tuple: (#(#fs),*)) ->
-                impl ::core::future::Future<Output = (#(#fs::Output),*)>
+            fn join<#(#tys),*>(tuple: (#(#tys),*)) ->
+                impl ::core::future::Future<Output = (#(#tys::Output),*)>
             where
-                #(#fs: ::core::future::Future,)*
+                #(#tys: ::core::future::Future,)*
             {
                 use ::core::{future::Future, pin::Pin, task::{self, Poll}};
 
@@ -51,27 +51,29 @@ impl ParAwait {
                     }
                 }
 
-                struct Join<#(#fs),*>
+                struct Join<#(#tys),*>
                 where
-                    #(#fs: Future,)*
+                    #(#tys: Future,)*
                 {
-                    tuple: (#(Waiting<#fs>),*),
+                    tuple: (#(Waiting<#tys>),*),
                 }
 
-                impl<#(#fs),*> Future for Join<#(#fs),*>
+                impl<#(#tys),*> Future for Join<#(#tys),*>
                 where
-                    #(#fs: Future,)*
+                    #(#tys: Future,)*
                 {
-                    type Output = (#(#fs::Output),*);
+                    type Output = (#(#tys::Output),*);
 
                     fn poll(
                         self: Pin<&mut Self>,
                         cx: &mut task::Context,
                     ) -> Poll<Self::Output> {
-                        let tuple = unsafe { &mut self.get_unchecked_mut().tuple };
-                        #({
-                            tuple.#ns.poll(cx);
-                        })*
+                        let tuple = unsafe {
+                            &mut self.get_unchecked_mut().tuple
+                        };
+
+                        #({ tuple.#ns.poll(cx); })*
+
                         let result = {
                             (
                                 #(match &mut tuple.#ns {
