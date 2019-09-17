@@ -1,0 +1,18 @@
+[package]
+name = "par_async"
+version = "0.1.0"
+authors = ["Shelby Doolittle <shelby@shelbyd.com>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "=1.0.1"
+quote = "=1.0.2"
+syn = { version = "=1.0.5", features = ["extra-traits", "fold", "full", "visit"] }
+
+[dev-dependencies]
+futures-test-preview = "=0.3.0-alpha.18"
+futures-util-preview = "=0.3.0-alpha.18"
+pin-utils = "=0.1.0-alpha.4"
