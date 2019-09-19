@@ -151,16 +151,3 @@ pub fn par_async(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let out = TokenStream::from(quote!(#output));
     out
 }
-
-// #[par_async]
-// async fn foo() -> String {
-//     let foo = echo("foo").await;
-//     let bar = echo("bar").await;
-//     foo + &bar
-// }
-//
-// #[par_async]
-// async fn foo() -> String {
-//     let (foo, bar) = join(echo("foo"), echo("bar")).await;
-//     foo + &bar
-// }
