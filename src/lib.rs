@@ -37,15 +37,17 @@ impl ParAwait {
                 use ::core::{future::Future, pin::Pin, task::{self, Poll}};
 
                 enum Waiting<F: Future> {
-                    Future(Pin<Box<F>>),
+                    Future(F),
                     Ready(Option<F::Output>),
                 }
 
                 impl<F: Future> Waiting<F> {
-                    fn poll(&mut self, cx: &mut task::Context) {
-                        if let Waiting::Future(pin) = self {
-                            if let Poll::Ready(v) = pin.as_mut().poll(cx) {
-                                *self = Waiting::Ready(Some(v));
+                    fn poll(self: Pin<&mut Self>, cx: &mut task::Context) {
+                        let this = unsafe { self.get_unchecked_mut() };
+                        if let Waiting::Future(pin) = this {
+                            let pin = unsafe { Pin::new_unchecked(pin) };
+                            if let Poll::Ready(v) = pin.poll(cx) {
+                                *this = Waiting::Ready(Some(v));
                             }
                         }
                     }
@@ -68,11 +70,9 @@ impl ParAwait {
                         self: Pin<&mut Self>,
                         cx: &mut task::Context,
                     ) -> Poll<Self::Output> {
-                        let tuple = unsafe {
-                            &mut self.get_unchecked_mut().tuple
-                        };
+                        let tuple = unsafe { &mut self.get_unchecked_mut().tuple };
 
-                        #({ tuple.#ns.poll(cx); })*
+                        #({ unsafe { Pin::new_unchecked(&mut tuple.#ns) }.poll(cx); })*
 
                         let result = {
                             (
