@@ -95,12 +95,19 @@ impl ParAwait {
     }
 
     fn future_ident(&self, node: &syn::ExprAwait) -> syn::Ident {
+        syn::Ident::new(
+            &format!("__par_async_future{}", self.index_of(node)),
+            Span::call_site(),
+        )
+    }
+
+    fn index_of(&self, node: &syn::ExprAwait) -> usize {
         self.awaits
             .iter()
             .enumerate()
             .find(|(_, aw)| *aw == node)
-            .map(|(i, _)| syn::Ident::new(&format!("__par_async_future{}", i), Span::call_site()))
             .expect("Could not find expr in known awaits")
+            .0
     }
 
     fn values(&self) -> syn::Stmt {
@@ -110,12 +117,10 @@ impl ParAwait {
     }
 
     fn value_ident(&self, node: &syn::ExprAwait) -> syn::Ident {
-        self.awaits
-            .iter()
-            .enumerate()
-            .find(|(_, aw)| *aw == node)
-            .map(|(i, _)| syn::Ident::new(&format!("__par_async_value{}", i), Span::call_site()))
-            .expect("Could not find expr in known awaits")
+        syn::Ident::new(
+            &format!("__par_async_value{}", self.index_of(node)),
+            Span::call_site(),
+        )
     }
 }
 
@@ -141,7 +146,7 @@ impl Fold for ParAwait {
             syn::Expr::Await(aw) => {
                 let value_ident = self.value_ident(&aw);
                 parse_quote!(#value_ident)
-            },
+            }
             other => fold::fold_expr(self, other),
         }
     }
