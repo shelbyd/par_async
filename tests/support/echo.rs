@@ -40,6 +40,7 @@ impl Echo {
         EchoFuture {
             shared: self.shared.clone(),
             input: s.to_string(),
+            returned: false,
         }
     }
 
@@ -60,19 +61,24 @@ impl Echo {
 pub struct EchoFuture {
     shared: Rc<RefCell<SharedEcho>>,
     input: String,
+    returned: bool,
 }
 
 impl Future for EchoFuture {
     type Output = String;
-    fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
-        {
-            let mut borrow = self.shared.borrow_mut();
-            let count = borrow.polls.entry(self.input.clone()).or_insert(0);
-            *count += 1;
+    fn poll(mut self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
+        if self.returned {
+            panic!("Polled previously resolved future");
         }
 
-        if self.shared.borrow().returns.contains(&self.input) {
-            self.shared.borrow_mut().returns.remove(&self.input);
+        let borrow = || self.shared.borrow_mut();
+
+        *borrow().polls.entry(self.input.clone()).or_insert(0) += 1;
+
+        if borrow().returns.contains(&self.input) {
+            borrow().returns.remove(&self.input);
+            self.returned = true;
+
             Poll::Ready(self.input.to_string())
         } else {
             Poll::Pending
@@ -123,5 +129,19 @@ mod echo_tests {
 
         let mut p = Pollable::new(e.echo("foo"));
         assert_eq!(p.poll(), Poll::Pending);
+    }
+
+    // Polling a resolved future violates the contract of the Future trait. This test ensures our
+    // code would panic if that contract is violated.
+    #[test]
+    #[should_panic(expected = "Polled previously resolved future")]
+    fn echo_polling_same_one_after_complete_panics() {
+        let e = Echo::new();
+        e.do_return("foo");
+
+        let mut p = Pollable::new(e.echo("foo"));
+        let _ = p.poll();
+
+        let _ = p.poll(); // Panic here.
     }
 }
