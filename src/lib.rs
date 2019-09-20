@@ -20,7 +20,7 @@ impl ParAwait {
         }
     }
 
-    fn join2(&self) -> syn::Stmt {
+    fn join(&self) -> syn::Stmt {
         let tys = (0..self.assigns.len())
             .map(|i| syn::Ident::new(&format!("F{}", i), Span::call_site()))
             .collect::<Vec<_>>();
@@ -126,12 +126,12 @@ impl Fold for ParAwait {
     fn fold_block(&mut self, node: syn::Block) -> syn::Block {
         let inner = fold::fold_block(self, node);
 
-        let join2 = self.join2();
+        let join = self.join();
         let destructure = self.destructure();
         let remaining_block = inner.stmts.into_iter().filter(|stmt| self.include(stmt));
 
         syn::Block {
-            stmts: vec![join2, destructure]
+            stmts: vec![join, destructure]
                 .into_iter()
                 .chain(remaining_block)
                 .collect(),
