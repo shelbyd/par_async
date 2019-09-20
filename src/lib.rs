@@ -80,7 +80,7 @@ impl ParAwait {
                 }
 
                 Join {
-                    tuple: (#(Waiting::Future(Box::pin(tuple.#ns)),)*),
+                    tuple: (#(Waiting::Future(tuple.#ns),)*),
                 }
             }
         )
