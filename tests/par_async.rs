@@ -143,6 +143,27 @@ mod echo_tests {
     }
 }
 
+struct Pollable<F>(Pin<Box<F>>);
+
+impl<F: Future> Pollable<F> {
+    fn new(f: F) -> Self {
+        Pollable(Box::pin(f))
+    }
+
+    fn poll(&mut self) -> Poll<F::Output> {
+        let mut cx = noop_context();
+        self.0.as_mut().poll(&mut cx)
+    }
+}
+
+fn assert_outstanding(e: &Echo, strs: &[&str]) {
+    assert_eq!(e.outstanding_requests(), hash_set(strs));
+
+    for s in strs {
+        assert!(e.polls(s) > 0);
+    }
+}
+
 #[test]
 fn it_does_not_affect_non_async_functions() {
     #[par_async]
@@ -160,10 +181,8 @@ fn it_immediately_returns_immediate_async() {
         42
     }
 
-    let f = foo();
-    pin_mut!(f);
-    let mut cx = noop_context();
-    assert_eq!(f.poll_unpin(&mut cx), Poll::Ready(42));
+    let mut p = Pollable::new(foo());
+    assert_eq!(p.poll(), Poll::Ready(42));
 }
 
 #[test]
@@ -176,10 +195,8 @@ fn it_awaits_a_future() {
     let e = Echo::new();
     e.do_return("foo");
 
-    let f = foo(&e);
-    pin_mut!(f);
-    let mut cx = noop_context();
-    assert_eq!(f.poll_unpin(&mut cx), Poll::Ready("foo".to_string()));
+    let mut p = Pollable::new(foo(&e));
+    assert_eq!(p.poll(), Poll::Ready("foo".to_string()));
 }
 
 #[test]
@@ -192,21 +209,15 @@ fn it_parallelizes_two_futures() {
     }
 
     let e = Echo::new();
+    let mut p = Pollable::new(foo(&e));
 
-    let f = foo(&e);
-    pin_mut!(f);
-    let mut cx = noop_context();
-    assert_eq!(f.poll_unpin(&mut cx), Poll::Pending);
-
-    assert_eq!(e.outstanding_requests(), hash_set(&["foo", "bar"]));
-
-    assert_eq!(e.polls("foo"), 1);
-    assert_eq!(e.polls("bar"), 1);
+    assert_eq!(p.poll(), Poll::Pending);
+    assert_outstanding(&e, &["foo", "bar"]);
 
     e.do_return("foo");
     e.do_return("bar");
 
-    assert_eq!(f.poll_unpin(&mut cx), Poll::Ready("foobar".to_string()));
+    assert_eq!(p.poll(), Poll::Ready("foobar".to_string()));
 }
 
 #[test]
@@ -220,23 +231,16 @@ fn it_parallelizes_three_futures() {
     }
 
     let e = Echo::new();
+    let mut p = Pollable::new(foo(&e));
 
-    let f = foo(&e);
-    pin_mut!(f);
-    let mut cx = noop_context();
-    assert_eq!(f.poll_unpin(&mut cx), Poll::Pending);
-
-    assert_eq!(e.outstanding_requests(), hash_set(&["foo", "bar", "baz"]));
-
-    assert_eq!(e.polls("foo"), 1);
-    assert_eq!(e.polls("bar"), 1);
-    assert_eq!(e.polls("baz"), 1);
+    assert_eq!(p.poll(), Poll::Pending);
+    assert_outstanding(&e, &["foo", "bar", "baz"]);
 
     e.do_return("foo");
     e.do_return("bar");
     e.do_return("baz");
 
-    assert_eq!(f.poll_unpin(&mut cx), Poll::Ready("foobarbaz".to_string()));
+    assert_eq!(p.poll(), Poll::Ready("foobarbaz".to_string()));
 }
 
 #[test]
@@ -249,22 +253,13 @@ fn it_allows_expressions_of_the_await() {
     }
 
     let e = Echo::new();
+    let mut p = Pollable::new(foo(&e));
 
-    let f = foo(&e);
-    pin_mut!(f);
-    let mut cx = noop_context();
-    assert_eq!(f.poll_unpin(&mut cx), Poll::Pending);
-
-    assert_eq!(e.outstanding_requests(), hash_set(&["foo", "bar"]));
-
-    assert_eq!(e.polls("foo"), 1);
-    assert_eq!(e.polls("bar"), 1);
+    assert_eq!(p.poll(), Poll::Pending);
+    assert_outstanding(&e, &["foo", "bar"]);
 
     e.do_return("foo");
     e.do_return("bar");
 
-    assert_eq!(
-        f.poll_unpin(&mut cx),
-        Poll::Ready("foomorebarmore".to_string())
-    );
+    assert_eq!(p.poll(), Poll::Ready("foomorebarmore".to_string()));
 }
