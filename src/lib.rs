@@ -181,6 +181,5 @@ pub fn par_async(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let output = par_await.fold_item_fn(input);
     let out = TokenStream::from(quote!(#output));
-    eprintln!("{}", out);
     out
 }
