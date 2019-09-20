@@ -1,6 +1,6 @@
 use par_async::*;
 use std::collections::HashSet;
-use std::{task::Poll};
+use std::task::Poll;
 
 mod support;
 use self::support::*;

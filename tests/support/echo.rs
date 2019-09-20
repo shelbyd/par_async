@@ -1,3 +1,4 @@
+use crate::support::pollable::*;
 use core::future::Future;
 use std::collections::{HashMap, HashSet};
 use std::{
@@ -6,7 +7,6 @@ use std::{
     rc::Rc,
     task::{Context, Poll},
 };
-use crate::support::pollable::*;
 
 #[derive(Default)]
 struct SharedEcho {
