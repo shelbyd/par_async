@@ -32,19 +32,16 @@ impl Echo {
         self.shared.borrow_mut().requests.remove(s);
     }
 
-    pub fn echo(&self, s: &str) -> EchoFuture {
+    pub fn echo(&self, s: &str) -> GlassFuture<EchoFuture> {
         if !self.shared.borrow().requests.contains(s) {
             let only_one_outstanding = self.shared.borrow_mut().requests.insert(s.to_string());
             assert!(only_one_outstanding);
         }
 
-        EchoFuture {
+        GlassFuture::new(EchoFuture {
             shared: self.shared.clone(),
             input: s.to_string(),
-            returned: false,
-            _pinned: core::marker::PhantomPinned,
-            first_poll_location: None,
-        }
+        })
     }
 
     pub fn outstanding_requests(&self) -> HashSet<String> {
@@ -64,47 +61,73 @@ impl Echo {
 pub struct EchoFuture {
     shared: Rc<RefCell<SharedEcho>>,
     input: String,
-    returned: bool,
-    _pinned: core::marker::PhantomPinned,
-    first_poll_location: Option<*const EchoFuture>,
 }
 
 impl Future for EchoFuture {
     type Output = String;
     fn poll(self: Pin<&mut Self>, _: &mut Context) -> Poll<Self::Output> {
-        if self.returned {
-            panic!("Polled previously resolved future");
-        }
+        let borrow = || self.shared.borrow_mut();
 
-        let this = unsafe { self.get_unchecked_mut() };
+        *borrow().polls.entry(self.input.clone()).or_insert(0) += 1;
 
-        let im_here = this as *const EchoFuture;
-        match this.first_poll_location {
-            Some(ptr) if im_here != ptr => panic!("Future moved between polls"),
-            None => this.first_poll_location = Some(im_here),
-            _ => {}
-        }
+        if borrow().returns.contains(&self.input) {
+            borrow().returns.remove(&self.input);
 
-        let borrow = || this.shared.borrow_mut();
-
-        *borrow().polls.entry(this.input.clone()).or_insert(0) += 1;
-
-        if borrow().returns.contains(&this.input) {
-            borrow().returns.remove(&this.input);
-            this.returned = true;
-
-            Poll::Ready(this.input.to_string())
+            Poll::Ready(self.input.to_string())
         } else {
             Poll::Pending
         }
     }
 }
 
-// Extremely sensitive implementation of Drop that panics if the future was moved after poll was
-// called.
-impl Drop for EchoFuture {
+/// Incredibly fragile wrapper around a future. Will explicitly panic if any Future or Pin constraints
+/// are broken.
+pub struct GlassFuture<F: Future> {
+    fut: F,
+    already_returned: bool,
+    _pinned: core::marker::PhantomPinned,
+    pinned_to: Option<*const Self>,
+}
+
+impl<F: Future> GlassFuture<F> {
+    pub fn new(fut: F) -> GlassFuture<F> {
+        GlassFuture {
+            fut,
+            already_returned: false,
+            _pinned: core::marker::PhantomPinned,
+            pinned_to: None,
+        }
+    }
+}
+
+impl<F: Future> Future for GlassFuture<F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        if self.already_returned {
+            panic!("Polled previously resolved future");
+        }
+
+        let this = unsafe { self.get_unchecked_mut() };
+
+        let current_location = this as *const Self;
+        match this.pinned_to {
+            Some(ptr) if current_location != ptr => panic!("Future moved between polls"),
+            None => this.pinned_to = Some(current_location),
+            _ => {}
+        }
+
+        let poll = unsafe { Pin::new_unchecked(&mut this.fut) }.poll(cx);
+        if let Poll::Ready(_) = poll {
+            this.already_returned = true;
+        }
+        poll
+    }
+}
+
+impl<F: Future> Drop for GlassFuture<F> {
     fn drop(&mut self) {
-        if let Some(ptr) = self.first_poll_location {
+        if let Some(ptr) = self.pinned_to {
             if ptr != self {
                 if !::std::thread::panicking() {
                     panic!("Future moved before drop");
