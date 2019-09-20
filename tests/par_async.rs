@@ -238,3 +238,33 @@ fn it_parallelizes_three_futures() {
 
     assert_eq!(f.poll_unpin(&mut cx), Poll::Ready("foobarbaz".to_string()));
 }
+
+#[test]
+fn it_allows_expressions_of_the_await() {
+    #[par_async]
+    async fn foo(e: &Echo) -> String {
+        let foo = e.echo("foo").await + "more";
+        let bar = e.echo("bar").await + "more";
+        foo + &bar
+    }
+
+    let e = Echo::new();
+
+    let f = foo(&e);
+    pin_mut!(f);
+    let mut cx = noop_context();
+    assert_eq!(f.poll_unpin(&mut cx), Poll::Pending);
+
+    assert_eq!(e.outstanding_requests(), hash_set(&["foo", "bar"]));
+
+    assert_eq!(e.polls("foo"), 1);
+    assert_eq!(e.polls("bar"), 1);
+
+    e.do_return("foo");
+    e.do_return("bar");
+
+    assert_eq!(
+        f.poll_unpin(&mut cx),
+        Poll::Ready("foomorebarmore".to_string())
+    );
+}
