@@ -116,3 +116,23 @@ fn it_allows_expressions_of_the_await() {
 
     assert_eq!(p.poll(), Poll::Ready("foomorebarmore".to_string()));
 }
+
+#[test]
+#[ignore]
+fn it_runs_expressions_before_the_await() {
+    // #[par_async]
+    async fn foo(e: &Echo) -> String {
+        let to_echo = "foo";
+        e.echo(to_echo).await
+    }
+
+    let e = Echo::new();
+    let mut p = Pollable::new(foo(&e));
+
+    assert_eq!(p.poll(), Poll::Pending);
+    assert_outstanding(&e, &["foo"]);
+
+    e.do_return("foo");
+
+    assert_eq!(p.poll(), Poll::Ready("foo".to_string()));
+}
